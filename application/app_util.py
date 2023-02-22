@@ -1,18 +1,13 @@
-import numpy as np
-from obspy import read, UTCDateTime, Stream
 import csv
-import pandas as pd
-import math
-from pathlib import Path
-import subprocess
 import glob
 import multiprocessing
 import os
 import shutil
 from functools import partial
-import matplotlib.pyplot as plt
-from matplotlib.ticker import PercentFormatter
-from obspy.geodetics import locations2degrees, degrees2kilometers
+
+import numpy as np
+import pandas as pd
+from obspy import read, UTCDateTime,Stream
 
 
 def bulletins2picks(bulletins_dir, picks):
@@ -141,7 +136,7 @@ def readjopenseqpha(eqphasf):
     return oeqphas, eqphas
 
 
-def mseed2npz(input_dir, output_dir, picks_file):
+def mseed2trainset(input_dir, output_dir, picks_file):
     input_length = 120
     print('converting...')
     if os.path.isdir(output_dir):
@@ -221,6 +216,95 @@ def mseed2npz(input_dir, output_dir, picks_file):
                 #     breakpoint()
                 csv_file.flush()
     csv_file.close()
+
+
+def mseed2testset(input_dir, output_dir, sta_list=None, data_period=180):
+    files = glob.glob(r'%s/*seed' % input_dir)
+    if os.path.isdir(output_dir):
+        print('============================================================================')
+        print(f' *** {output_dir} already exists!')
+        inp = input(" --> Type (Yes or y) to create a new empty directory! otherwise it will overwrite!   ")
+        if inp.lower() == "yes" or inp.lower() == "y":
+            shutil.rmtree(output_dir)
+    os.makedirs(os.path.join(output_dir, 'mseed'))
+    csv_file = open(os.path.join(output_dir, "fname.csv"), 'w', newline='')
+    output_writer = csv.writer(csv_file, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+    output_writer.writerow(['fname', 'E', 'N', 'Z'])
+    for f in files:
+        # trs = read(f)
+        trs = read(f, format='rg16')
+        netstalocs = []
+        start_time = trs[0].stats.starttime
+        datastr = (start_time + 8 * 3600).strftime('%Y%m%d%H%M%S.%f')[:-4]
+        trs.merge()
+        trs.trim(start_time, start_time + data_period, pad=True, fill_value=0)
+        # ----------filter part---------
+        trs.detrend('constant')
+        # trs.filter('bandpass', freqmin=1.0, freqmax=45, corners=2, zerophase=True)
+        # trs.taper(max_percentage=0.001, type='cosine', max_length=2)
+        # ------------------------------6
+        for i in range(len(trs)):
+            net = trs[i].stats.network
+            sta = trs[i].stats.station
+            loc = trs[i].stats.location
+            receiver_type = trs[i].stats.channel[:-1]
+            if sta_list is not None and f"{net}.{sta}" not in sta_list:
+                continue
+            if f"{net}.{sta}.{loc}" in netstalocs:
+                continue
+            netstalocs.append(f"{net}.{sta}.{loc}")
+            fname = datastr + f'_{net}.{sta}.{loc}.{receiver_type}.mseed'
+            now_st = trs.select(network=net, station=sta)
+            now_st.write(os.path.join(output_dir, 'mseed', fname), format='MSEED')
+            output_writer.writerow([fname, receiver_type + 'E', receiver_type + 'N', receiver_type + 'Z'])
+            csv_file.flush()
+            # breakpoint()
+
+
+def sac2testset(input_dir, output_dir, sta_list=None, data_period=180):
+    sacdirs = glob.glob(r'%s/*sac' % input_dir)
+    if os.path.isdir(output_dir):
+        print('============================================================================')
+        print(f' *** {output_dir} already exists!')
+        inp = input(" --> Type (Yes or y) to create a new empty directory! otherwise it will overwrite!   ")
+        if inp.lower() == "yes" or inp.lower() == "y":
+            shutil.rmtree(output_dir)
+            os.makedirs(os.path.join(output_dir, 'mseed'))
+    csv_file = open(os.path.join(output_dir, "fname.csv"), 'w', newline='')
+    output_writer = csv.writer(csv_file, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+    output_writer.writerow(['fname', 'E', 'N', 'Z'])
+    for sacdir in sacdirs:
+        files = glob.glob(r'%s/*.SAC' % sacdir)
+        trs = Stream()
+        for f in files:
+            trf = read(f)
+            trs.append(trf[0])
+        netstalocs = []
+        start_time = trs[0].stats.starttime
+        datastr = (start_time + 8 * 3600).strftime('%Y%m%d%H%M%S.%f')[:-4]
+        trs.merge()
+        trs.trim(start_time, start_time + data_period, pad=True, fill_value=0)
+        # ----------filter part---------
+        trs.detrend('constant')
+        # trs.filter('bandpass', freqmin=1.0, freqmax=45, corners=2, zerophase=True)
+        # trs.taper(max_percentage=0.001, type='cosine', max_length=2)
+        # ------------------------------6
+        for i in range(len(trs)):
+            net = trs[i].stats.network
+            sta = trs[i].stats.station
+            loc = trs[i].stats.location if trs[i].stats.location!='' else '00'
+            receiver_type = trs[i].stats.channel[:-1]
+            if sta_list is not None and f"{net}.{sta}" not in sta_list:
+                continue
+            if f"{net}.{sta}.{loc}" in netstalocs:
+                continue
+            netstalocs.append(f"{net}.{sta}.{loc}")
+            fname = datastr + f'_{net}.{sta}.{loc}.{receiver_type}.mseed'
+            now_st = trs.select(network=net, station=sta)
+            now_st.write(os.path.join(output_dir, 'mseed', fname), format='MSEED')
+            output_writer.writerow([fname, receiver_type + 'E', receiver_type + 'N', receiver_type + 'Z'])
+            csv_file.flush()
+            # breakpoint()
 
 
 def standardize(data):

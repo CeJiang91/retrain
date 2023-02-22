@@ -25,12 +25,12 @@ def convert_picks_csv(picks, stations, config):
         revised by jc
         meta = stations.merge(picks["id"], how="right", on="id")
     """
-    stations["sta"] = stations["id"]
+    # stations["sta"] = stations["id"]
     meta = stations.merge(picks["sta"], how="right", on="sta")
     locs = meta[config["dims"]].to_numpy()
     phase_type = picks["type"].apply(lambda x: x.lower()).to_numpy()
     phase_weight = picks["prob"].to_numpy()[:, np.newaxis]
-    pick_station_id = picks.apply(lambda x: x.id + "_" + x.type, axis=1).to_numpy()
+    pick_station_id = picks.apply(lambda x: x.sta + "_" + x.type, axis=1).to_numpy()
     nan_idx = meta.isnull().any(axis=1)
     return (
         data[~nan_idx],
